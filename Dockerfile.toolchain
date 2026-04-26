@@ -99,14 +99,18 @@ ENV DOTNET_CLI_TELEMETRY_OPTOUT=1 \
 # wasm-tools needed to publish C# to wasm during export
 RUN dotnet workload install wasm-tools
 
-# Runtime libs the Godot binary links against.
-# Note: on Ubuntu 24.04 (noble) libasound2 was renamed to libasound2t64 as
-# part of the time_t 64-bit transition. Other libs in this list kept their
-# original names because their ABI doesn't expose time_t.
+# Runtime libs the Godot binary links against, plus python for emcc.
+# The wasm-tools workload's emcc shells out to `python` during AOT
+# compilation of .NET assemblies to wasm. python-is-python3 provides
+# the bare `python` symlink that emcc looks for in PATH.
+# Note: on Ubuntu 24.04 (noble) libasound2 was renamed to libasound2t64
+# as part of the time_t 64-bit transition. Other libs in this list kept
+# their original names because their ABI doesn't expose time_t.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         libfontconfig1 libfreetype6 libx11-6 libxcursor1 libxinerama1 \
         libxi6 libxrandr2 libgl1 libasound2t64 libpulse0 libudev1 libdbus-1-3 \
         ca-certificates \
+        python3 python-is-python3 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /godot_version.txt /opt/godot_version.txt
