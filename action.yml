@@ -1,0 +1,52 @@
+name: 'Godot C# Web Export'
+description: 'Export a Godot 4.7 C# project to web using a prebuilt toolchain image.'
+author: 'godot-dotnet-web-cicd'
+
+branding:
+  icon: 'box'
+  color: 'blue'
+
+inputs:
+  preset:
+    description: 'Name of the export preset in your project (must match export_presets.cfg).'
+    required: false
+    default: 'Web'
+  output:
+    description: 'Output path for the exported HTML, relative to the project root.'
+    required: false
+    default: 'build/index.html'
+  project-path:
+    description: 'Path to the Godot project root (containing project.godot).'
+    required: false
+    default: '.'
+  toolchain-tag:
+    description: 'Tag of the toolchain image to use.'
+    required: false
+    default: 'latest'
+  toolchain-image:
+    description: 'Override the toolchain image (defaults to ghcr.io/<owner>/<repo>-toolchain).'
+    required: false
+    default: ''
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Resolve toolchain image
+      id: img
+      shell: bash
+      run: |
+        if [ -n "${{ inputs.toolchain-image }}" ]; then
+          echo "image=${{ inputs.toolchain-image }}" >> "$GITHUB_OUTPUT"
+        else
+          echo "image=ghcr.io/${{ github.action_repository }}-toolchain" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Run web export
+      shell: bash
+      run: |
+        docker run --rm \
+          -v "${{ github.workspace }}/${{ inputs.project-path }}:/project" \
+          -e GODOT_PRESET="${{ inputs.preset }}" \
+          -e OUTPUT_PATH="${{ inputs.output }}" \
+          "${{ steps.img.outputs.image }}:${{ inputs.toolchain-tag }}" \
+          "${{ inputs.preset }}" "${{ inputs.output }}"

@@ -1,0 +1,120 @@
+# syntax=docker/dockerfile:1.7
+#
+# Toolchain image for building C# Godot web exports.
+# Bakes a custom Godot fork (editor + web templates) plus .NET SDK and
+# the wasm-tools workload, so CI jobs can run an export in minutes.
+#
+# Build cost is high (~1-2 hours on a 2-core runner). Rebuild only when
+# bumping GODOT_REF.
+
+# ---------- Stage 1: build Godot editor + web templates ----------
+FROM ubuntu:22.04 AS builder
+
+ARG GODOT_REPO=https://github.com/NoctemCat/godot.git
+ARG GODOT_REF=libgodot_mono_web
+ARG EMSDK_VERSION=3.1.56
+ARG DOTNET_CHANNEL=8.0
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential pkg-config \
+        scons python3 python3-pip \
+        git ca-certificates curl wget unzip xz-utils gnupg \
+        libx11-dev libxcursor-dev libxinerama-dev libxi-dev libxrandr-dev \
+        libwayland-dev libgl1-mesa-dev libasound2-dev libpulse-dev \
+        libudev-dev libdbus-1-dev libfreetype6-dev libssl-dev \
+        yasm \
+    && rm -rf /var/lib/apt/lists/*
+
+# .NET SDK from Microsoft's repo
+RUN wget -q https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb -O /tmp/pmp.deb \
+    && dpkg -i /tmp/pmp.deb && rm /tmp/pmp.deb \
+    && apt-get update && apt-get install -y --no-install-recommends "dotnet-sdk-${DOTNET_CHANNEL}" \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV DOTNET_CLI_TELEMETRY_OPTOUT=1 \
+    DOTNET_NOLOGO=1
+
+# wasm-tools workload (required to AOT/publish C# to wasm)
+RUN dotnet workload install wasm-tools
+
+# Pinned emsdk (C# runtime currently locked to 3.1.56 per upstream guidance)
+RUN git clone --depth=1 https://github.com/emscripten-core/emsdk.git /opt/emsdk \
+    && /opt/emsdk/emsdk install "${EMSDK_VERSION}" \
+    && /opt/emsdk/emsdk activate "${EMSDK_VERSION}"
+
+# Clone the fork that has C# web export support
+WORKDIR /src
+RUN git clone --recursive --depth=1 --branch "${GODOT_REF}" "${GODOT_REPO}" godot
+WORKDIR /src/godot
+
+# 1. Editor (needed to generate mono glue)
+RUN scons target=editor production=yes module_mono_enabled=yes -j"$(nproc)"
+
+# 2. Generate mono glue using the editor we just built
+RUN ./bin/godot.linuxbsd.editor.x86_64.mono --headless --generate-mono-glue ./modules/mono/glue
+
+# 3. Build C# assemblies and push them into a local NuGet feed
+RUN ./modules/mono/build_scripts/build_assemblies.py \
+        --godot-output-dir ./bin \
+        --push-nupkgs-local /src/.nuget_local/
+
+# 4a. Web template — multithreaded (requires COOP/COEP headers when serving)
+RUN bash -lc "source /opt/emsdk/emsdk_env.sh && \
+    scons target=template_release platform=web library_type=static_library \
+          module_mono_enabled=yes lto=none disable_crash_handler=yes \
+          proxy_to_pthread=yes -j$(nproc)"
+
+# 4b. Web template — single-threaded (no special headers needed)
+RUN bash -lc "source /opt/emsdk/emsdk_env.sh && \
+    scons target=template_release platform=web library_type=static_library \
+          module_mono_enabled=yes lto=none disable_crash_handler=yes \
+          threads=no -j$(nproc)"
+
+# Compute Godot version string used in the templates dir path
+RUN python3 -c "import version; \
+print(f\"{version.major}.{version.minor}.{getattr(version, 'patch', 0)}.{version.status}.mono\" \
+      if getattr(version, 'patch', 0) else \
+      f\"{version.major}.{version.minor}.{version.status}.mono\")" > /godot_version.txt \
+    && cat /godot_version.txt
+
+# Stage outputs into /out
+RUN mkdir -p /out/bin /out/templates /out/nuget \
+    && find ./bin -maxdepth 1 -type f -name 'godot.linuxbsd.editor.*mono*' \
+        ! -name '*.zip' -exec cp {} /out/bin/godot \; \
+    && cp -r ./bin/GodotSharp /out/bin/GodotSharp \
+    && find ./bin -maxdepth 1 -name '*template_release*mono*.zip' -exec cp {} /out/templates/ \; \
+    && cp -r /src/.nuget_local/. /out/nuget/ \
+    && ls -la /out/bin /out/templates /out/nuget
+
+# ---------- Stage 2: runtime image used by CI ----------
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS runtime
+
+ENV DOTNET_CLI_TELEMETRY_OPTOUT=1 \
+    DOTNET_NOLOGO=1 \
+    GODOT_PRESET=Web \
+    OUTPUT_PATH=build/index.html \
+    PATH=/opt/godot:$PATH
+
+# wasm-tools needed to publish C# to wasm during export
+RUN dotnet workload install wasm-tools
+
+# Runtime libs the Godot binary links against
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libfontconfig1 libfreetype6 libx11-6 libxcursor1 libxinerama1 \
+        libxi6 libxrandr2 libgl1 libasound2 libpulse0 libudev1 libdbus-1-3 \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /godot_version.txt /opt/godot_version.txt
+COPY --from=builder /out/bin/godot /opt/godot/godot
+COPY --from=builder /out/bin/GodotSharp /opt/godot/GodotSharp
+COPY --from=builder /out/templates /opt/godot-templates
+COPY --from=builder /out/nuget /opt/godot-nuget
+
+COPY scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /opt/godot/godot /usr/local/bin/docker-entrypoint.sh
+
+WORKDIR /project
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]

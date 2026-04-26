@@ -1,0 +1,4 @@
+build/
+.nuget_local/
+*.log
+.DS_Store

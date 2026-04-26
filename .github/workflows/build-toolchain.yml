@@ -1,0 +1,84 @@
+name: Build toolchain image
+
+on:
+  workflow_dispatch:
+    inputs:
+      godot_ref:
+        description: 'Branch, tag, or commit of the Godot fork to build'
+        required: false
+        default: 'libgodot_mono_web'
+      godot_repo:
+        description: 'Godot fork repository URL'
+        required: false
+        default: 'https://github.com/NoctemCat/godot.git'
+  push:
+    branches: [main]
+    paths:
+      - 'Dockerfile.toolchain'
+      - 'scripts/docker-entrypoint.sh'
+      - '.github/workflows/build-toolchain.yml'
+  schedule:
+    # Weekly rebuild to pick up Godot fork commits
+    - cron: '0 6 * * 1'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE: ${{ github.repository }}-toolchain
+
+jobs:
+  build:
+    # Compiling Godot editor + 2 web templates is heavy. The default
+    # 2-core ubuntu-latest can OOM/timeout. Switch to ubuntu-latest-large
+    # or a self-hosted runner if you hit issues.
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve Godot ref SHA (for tagging)
+        id: ref
+        run: |
+          REPO="${{ github.event.inputs.godot_repo || 'https://github.com/NoctemCat/godot.git' }}"
+          REF="${{ github.event.inputs.godot_ref || 'libgodot_mono_web' }}"
+          SHA=$(git ls-remote "$REPO" "$REF" | awk '{print substr($1,1,12)}')
+          [ -n "$SHA" ] || SHA="unknown"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "ref=$REF" >> "$GITHUB_OUTPUT"
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE }}
+          tags: |
+            type=raw,value=latest
+            type=raw,value=godot-${{ steps.ref.outputs.sha }}
+            type=raw,value=run-${{ github.run_number }}
+
+      - name: Build & push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.toolchain
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            GODOT_REPO=${{ github.event.inputs.godot_repo || 'https://github.com/NoctemCat/godot.git' }}
+            GODOT_REF=${{ github.event.inputs.godot_ref || 'libgodot_mono_web' }}
