@@ -36,10 +36,16 @@ runs:
       shell: bash
       run: |
         if [ -n "${{ inputs.toolchain-image }}" ]; then
-          echo "image=${{ inputs.toolchain-image }}" >> "$GITHUB_OUTPUT"
+          img="${{ inputs.toolchain-image }}"
+        elif [ -n "${{ github.action_repository }}" ]; then
+          # Used via `uses: owner/repo@ref` from another workspace
+          img="ghcr.io/${{ github.action_repository }}-toolchain"
         else
-          echo "image=ghcr.io/${{ github.action_repository }}-toolchain" >> "$GITHUB_OUTPUT"
+          # Used locally via `uses: ./` — fall back to current repo
+          img="ghcr.io/${{ github.repository }}-toolchain"
         fi
+        echo "image=$img" >> "$GITHUB_OUTPUT"
+        echo "Using image: $img:${{ inputs.toolchain-tag }}"
 
     - name: Run web export
       shell: bash
