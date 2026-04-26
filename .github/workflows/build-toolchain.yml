@@ -11,15 +11,6 @@ on:
         description: 'Godot fork repository URL'
         required: false
         default: 'https://github.com/NoctemCat/godot.git'
-  push:
-    branches: [main]
-    paths:
-      - 'Dockerfile.toolchain'
-      - 'scripts/docker-entrypoint.sh'
-      - '.github/workflows/build-toolchain.yml'
-  schedule:
-    # Weekly rebuild to pick up Godot fork commits
-    - cron: '0 6 * * 1'
 
 env:
   REGISTRY: ghcr.io
