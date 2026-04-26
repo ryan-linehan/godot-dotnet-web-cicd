@@ -6,12 +6,29 @@ TEMPLATES_DIR="${HOME}/.local/share/godot/export_templates/${GODOT_VERSION}"
 
 mkdir -p "${TEMPLATES_DIR}"
 
-# Install baked templates into the standard Godot location.
+# Map our compiled templates to the standard names Godot looks for in
+# ~/.local/share/godot/export_templates/<version>/. Scons emits:
+#   godot.web.template_release.wasm32.mono.zip            (multithreaded)
+#   godot.web.template_release.wasm32.nothreads.mono.zip  (single-threaded)
+# Godot's export validator checks both *_release.zip AND *_debug.zip exist
+# even when --export-release is invoked. We only build release templates,
+# so the release zip is also dropped into the debug slot — the actual
+# export command still reads the release zip when --export-release runs.
 # -n leaves any user-supplied template untouched.
-for tpl in /opt/godot-templates/*.zip; do
-    [ -e "$tpl" ] || continue
-    cp -n "$tpl" "${TEMPLATES_DIR}/$(basename "$tpl")"
+shopt -s nullglob
+for src in /opt/godot-templates/*.zip; do
+    case "$(basename "$src")" in
+        *template_release*nothreads*)
+            cp -n "$src" "${TEMPLATES_DIR}/web_nothreads_release.zip"
+            cp -n "$src" "${TEMPLATES_DIR}/web_nothreads_debug.zip"
+            ;;
+        *template_release*)
+            cp -n "$src" "${TEMPLATES_DIR}/web_release.zip"
+            cp -n "$src" "${TEMPLATES_DIR}/web_debug.zip"
+            ;;
+    esac
 done
+shopt -u nullglob
 
 # Make the local NuGet feed (Godot.NET.Sdk built from the fork) discoverable.
 if [ -d /opt/godot-nuget ] && [ -n "$(ls -A /opt/godot-nuget 2>/dev/null)" ]; then
@@ -19,6 +36,15 @@ if [ -d /opt/godot-nuget ] && [ -n "$(ls -A /opt/godot-nuget 2>/dev/null)" ]; th
 fi
 
 cd /project
+
+# Demo presets reference custom_template paths from the upstream author's
+# machine (/mnt/Data/...). Godot validates those paths even when valid
+# standard templates exist, so blank them out and let the standard
+# templates dir take over.
+if [ -f export_presets.cfg ]; then
+    sed -i 's|^custom_template/debug=".*"$|custom_template/debug=""|' export_presets.cfg
+    sed -i 's|^custom_template/release=".*"$|custom_template/release=""|' export_presets.cfg
+fi
 
 # Restore C# deps if a project file exists at the root.
 if compgen -G "*.csproj" > /dev/null || compgen -G "*.sln" > /dev/null; then
