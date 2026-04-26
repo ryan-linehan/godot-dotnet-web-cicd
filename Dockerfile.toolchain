@@ -8,16 +8,21 @@
 # bumping GODOT_REF.
 
 # ---------- Stage 1: build Godot editor + web templates ----------
-# Ubuntu 24.04 is required: scons platform_methods.py uses
-# tempfile.NamedTemporaryFile(delete_on_close=...), which is Python 3.12+.
-FROM ubuntu:24.04 AS builder
+# Base: Microsoft's .NET 10 SDK image on Ubuntu 24.04 (noble).
+# - .NET 10 matches the demo project's <TargetFramework>net10.0</TargetFramework>.
+# - Ubuntu 24.04 ships Python 3.12, required by scons platform_methods.py
+#   (uses tempfile.NamedTemporaryFile(delete_on_close=...)).
+# - Same base for builder and runtime keeps GLIBC versions aligned so the
+#   compiled godot binary can load at runtime.
+FROM mcr.microsoft.com/dotnet/sdk:10.0-noble AS builder
 
 ARG GODOT_REPO=https://github.com/NoctemCat/godot.git
 ARG GODOT_REF=libgodot_mono_web
 ARG EMSDK_VERSION=3.1.56
-ARG DOTNET_CHANNEL=8.0
 
-ENV DEBIAN_FRONTEND=noninteractive
+ENV DEBIAN_FRONTEND=noninteractive \
+    DOTNET_CLI_TELEMETRY_OPTOUT=1 \
+    DOTNET_NOLOGO=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential pkg-config \
@@ -28,15 +33,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libudev-dev libdbus-1-dev libfreetype6-dev libssl-dev \
         yasm \
     && rm -rf /var/lib/apt/lists/*
-
-# .NET SDK from Microsoft's repo
-RUN wget -q https://packages.microsoft.com/config/ubuntu/24.04/packages-microsoft-prod.deb -O /tmp/pmp.deb \
-    && dpkg -i /tmp/pmp.deb && rm /tmp/pmp.deb \
-    && apt-get update && apt-get install -y --no-install-recommends "dotnet-sdk-${DOTNET_CHANNEL}" \
-    && rm -rf /var/lib/apt/lists/*
-
-ENV DOTNET_CLI_TELEMETRY_OPTOUT=1 \
-    DOTNET_NOLOGO=1
 
 # wasm-tools workload (required to AOT/publish C# to wasm)
 RUN dotnet workload install wasm-tools
@@ -91,7 +87,8 @@ RUN mkdir -p /out/bin /out/templates /out/nuget \
     && ls -la /out/bin /out/templates /out/nuget
 
 # ---------- Stage 2: runtime image used by CI ----------
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS runtime
+# Same base as builder so GLIBC matches the godot binary's link-time version.
+FROM mcr.microsoft.com/dotnet/sdk:10.0-noble AS runtime
 
 ENV DOTNET_CLI_TELEMETRY_OPTOUT=1 \
     DOTNET_NOLOGO=1 \
