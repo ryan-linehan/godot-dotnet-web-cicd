@@ -75,6 +75,11 @@ touch -d "1 second ago" "${LOG_BASELINE}"
 
 echo "==> Exporting preset='${PRESET}' to '${OUTPUT}' (templates: ${GODOT_VERSION})"
 if godot --headless --verbose --export-release "${PRESET}" "${OUTPUT}"; then
+    # Container runs as root; output ends up root-owned with directories
+    # like _framework/ created by dotnet publish at mode 700. The host
+    # runner user (UID 1001) needs read access so actions/upload-artifact
+    # can zip the tree without EACCES. Make the build dir world-readable.
+    chmod -R a+rX "$(dirname "${OUTPUT}")"
     echo "==> Done. Artifacts in: $(dirname "${OUTPUT}")"
     ls -la "$(dirname "${OUTPUT}")"
 else
