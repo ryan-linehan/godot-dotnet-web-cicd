@@ -54,6 +54,18 @@ fi
 # Restore C# deps if a project file exists at the root.
 if compgen -G "*.csproj" > /dev/null || compgen -G "*.sln" > /dev/null; then
     dotnet restore || true
+
+    # Godot's export plugin runs `dotnet publish` internally and routes its
+    # output to the editor's MSBuild panel — in --headless mode we get only
+    # "Failed to build project" with no detail. Run publish ourselves first
+    # with the same parameters so any compile error shows up in CI logs.
+    echo "==> Probing dotnet publish for browser-wasm to surface MSBuild errors"
+    dotnet publish \
+        -c ExportRelease \
+        -r browser-wasm \
+        /p:GodotTargetPlatform=web \
+        --self-contained \
+        || echo "==> WARNING: standalone publish failed; continuing so Godot can report its own diagnostics"
 fi
 
 # Godot import: first run can fail on missing .import metadata; second always succeeds.
@@ -66,7 +78,7 @@ OUTPUT="${2:-${OUTPUT_PATH}}"
 mkdir -p "$(dirname "${OUTPUT}")"
 
 echo "==> Exporting preset='${PRESET}' to '${OUTPUT}' (templates: ${GODOT_VERSION})"
-godot --headless --export-release "${PRESET}" "${OUTPUT}"
+godot --headless --verbose --export-release "${PRESET}" "${OUTPUT}"
 
 echo "==> Done. Artifacts in: $(dirname "${OUTPUT}")"
 ls -la "$(dirname "${OUTPUT}")"
