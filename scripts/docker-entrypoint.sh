@@ -31,8 +31,13 @@ done
 shopt -u nullglob
 
 # Make the local NuGet feed (Godot.NET.Sdk built from the fork) discoverable.
+# Add it as a user-level source for projects with no nuget.config of their own,
+# AND expose it at /.nuget_local so projects using the upstream demo's
+# nuget.config (which references `./../.nuget_local` as a sibling of the
+# project dir) resolve it correctly when only the project dir is mounted.
 if [ -d /opt/godot-nuget ] && [ -n "$(ls -A /opt/godot-nuget 2>/dev/null)" ]; then
     dotnet nuget add source /opt/godot-nuget --name godot-local >/dev/null 2>&1 || true
+    ln -sfn /opt/godot-nuget /.nuget_local
 fi
 
 cd /project
