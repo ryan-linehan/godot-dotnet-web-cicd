@@ -36,7 +36,7 @@ jobs:
       - name: Export web build
         uses: ./
         with:
-          project-path: demo
+          project-path: demo/csharp_project
           preset: Web
           output: build/index.html
 
@@ -44,5 +44,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: web-export
-          path: demo/build
+          path: demo/csharp_project/build
           if-no-files-found: error
