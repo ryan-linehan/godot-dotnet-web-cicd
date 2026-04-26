@@ -15,6 +15,9 @@ jobs:
       packages: read
 
     steps:
+      - name: Check out this repo (provides action.yml)
+        uses: actions/checkout@v4
+
       - name: Check out demo project
         uses: actions/checkout@v4
         with:
