@@ -8,7 +8,9 @@
 # bumping GODOT_REF.
 
 # ---------- Stage 1: build Godot editor + web templates ----------
-FROM ubuntu:22.04 AS builder
+# Ubuntu 24.04 is required: scons platform_methods.py uses
+# tempfile.NamedTemporaryFile(delete_on_close=...), which is Python 3.12+.
+FROM ubuntu:24.04 AS builder
 
 ARG GODOT_REPO=https://github.com/NoctemCat/godot.git
 ARG GODOT_REF=libgodot_mono_web
@@ -28,7 +30,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # .NET SDK from Microsoft's repo
-RUN wget -q https://packages.microsoft.com/config/ubuntu/22.04/packages-microsoft-prod.deb -O /tmp/pmp.deb \
+RUN wget -q https://packages.microsoft.com/config/ubuntu/24.04/packages-microsoft-prod.deb -O /tmp/pmp.deb \
     && dpkg -i /tmp/pmp.deb && rm /tmp/pmp.deb \
     && apt-get update && apt-get install -y --no-install-recommends "dotnet-sdk-${DOTNET_CHANNEL}" \
     && rm -rf /var/lib/apt/lists/*
