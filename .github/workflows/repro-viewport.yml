@@ -1,0 +1,82 @@
+name: Repro - Viewport TypeInit crash (NoctemCat fork)
+
+# Standalone repro: the upstream demo never touches Godot.Viewport from C#,
+# so the binding mismatch (web template missing `set_use_xr` while glue
+# includes `Viewport.UseXR`) doesn't surface there. This workflow checks
+# out the demo, drops in a one-line autoload that calls
+# GetTree().Root.GetVisibleRect(), exports it through this toolchain, and
+# uploads the build. Open it in a COOP/COEP server and the browser console
+# shows TypeInitializationException on Godot.Viewport with inner
+# NativeMethodBindNotFoundException(Method 'Viewport.set_use_xr').
+
+on:
+  workflow_dispatch:
+
+jobs:
+  repro:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out this repo (provides action.yml)
+        uses: actions/checkout@v4
+
+      - name: Check out demo project
+        uses: actions/checkout@v4
+        with:
+          repository: NoctemCat/DotnetWebExportDemo
+          ref: integrated_in_sdk
+          submodules: false
+          path: demo
+
+      - name: Inject ViewportRepro autoload
+        run: |
+          cat > demo/csharp_project/ViewportRepro.cs <<'CS'
+          using Godot;
+
+          public partial class ViewportRepro : Node
+          {
+              public override void _Ready()
+              {
+                  GD.Print("REPRO: about to touch Viewport...");
+                  try
+                  {
+                      var rect = GetTree().Root.GetVisibleRect();
+                      GD.Print("REPRO viewport rect: ", rect);
+                  }
+                  catch (System.Exception e)
+                  {
+                      GD.PushError("REPRO caught outer: " + e.GetType().FullName + ": " + e.Message);
+                      if (e.InnerException != null)
+                      {
+                          GD.PushError("REPRO caught inner: " + e.InnerException.GetType().FullName + ": " + e.InnerException.Message);
+                      }
+                  }
+              }
+          }
+          CS
+
+          # Demo's project.godot has no [autoload] section, so plain append works.
+          cat >> demo/csharp_project/project.godot <<'GODOT'
+
+          [autoload]
+
+          ViewportRepro="*res://ViewportRepro.cs"
+          GODOT
+
+          echo "----- ViewportRepro.cs -----"
+          cat demo/csharp_project/ViewportRepro.cs
+          echo "----- project.godot tail -----"
+          tail -20 demo/csharp_project/project.godot
+
+      - name: Export web build
+        uses: ./
+        with:
+          project-path: demo/csharp_project
+          preset: Web
+          output: build/index.html
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: viewport-repro
+          path: demo/csharp_project/build
+          if-no-files-found: error
