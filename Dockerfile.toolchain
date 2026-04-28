@@ -47,35 +47,42 @@ WORKDIR /src
 RUN git clone --recursive --depth=1 --branch "${GODOT_REF}" "${GODOT_REPO}" godot
 WORKDIR /src/godot
 
-# 1. Editor (needed to generate mono glue)
-RUN scons target=editor production=yes module_mono_enabled=yes -j"$(nproc)"
+# 1. Editor (needed to generate mono glue).
+# xr_enabled=no on every Godot build in this image so that:
+#   - The editor's classdb has no Viewport::set_use_xr binding.
+#   - --generate-mono-glue therefore omits Viewport.UseXR from GodotSharp.dll.
+#   - The web templates (also xr_enabled=no) have no set_use_xr in classdb.
+# Result: glue and runtime agree, and the C# static cctor for Godot.Viewport
+# doesn't try to bind a method that isn't there.
+#
+# We previously tried xr_enabled=yes on just the web templates (assuming the
+# editor already had it on by default). The fork's library_type=static_library
+# build path apparently strips XR regardless of that flag, so the binary still
+# lacked set_use_xr while glue still referenced it. Going to xr_enabled=no
+# everywhere matches both sides at the lower setting and avoids the issue.
+RUN scons target=editor production=yes module_mono_enabled=yes \
+          xr_enabled=no -j"$(nproc)"
 
-# 2. Generate mono glue using the editor we just built
+# 2. Generate mono glue using the editor we just built (no XR in classdb).
 RUN ./bin/godot.linuxbsd.editor.x86_64.mono --headless --generate-mono-glue ./modules/mono/glue
 
-# 3. Build C# assemblies and push them into a local NuGet feed
+# 3. Build C# assemblies and push them into a local NuGet feed.
 RUN ./modules/mono/build_scripts/build_assemblies.py \
         --godot-output-dir ./bin \
         --push-nupkgs-local /src/.nuget_local/
 
 # 4a. Web template — multithreaded (requires COOP/COEP headers when serving).
-# xr_enabled=yes forces the XR-related bindings (e.g. Viewport::set_use_xr)
-# to be registered in the binary. Without it, the editor-generated GodotSharp
-# glue references Viewport.UseXR but the runtime classdb has no entry for
-# set_use_xr, which makes Viewport's static cctor blow up at first touch
-# from any C# code (TypeInitializationException -> NativeMethodBindNotFound).
 RUN bash -lc "source /opt/emsdk/emsdk_env.sh && \
     scons target=template_release platform=web library_type=static_library \
           module_mono_enabled=yes lto=none disable_crash_handler=yes \
-          xr_enabled=yes \
+          xr_enabled=no \
           proxy_to_pthread=yes -j$(nproc)"
 
 # 4b. Web template — single-threaded (no special headers needed).
-# Same xr_enabled=yes rationale as the multithreaded build above.
 RUN bash -lc "source /opt/emsdk/emsdk_env.sh && \
     scons target=template_release platform=web library_type=static_library \
           module_mono_enabled=yes lto=none disable_crash_handler=yes \
-          xr_enabled=yes \
+          xr_enabled=no \
           threads=no -j$(nproc)"
 
 # Compute Godot version string used in the templates dir path
