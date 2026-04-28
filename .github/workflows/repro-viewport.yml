@@ -71,7 +71,7 @@ jobs:
         uses: ./
         with:
           project-path: demo/csharp_project
-          preset: Web
+          preset: WebNothreads
           output: build/index.html
 
       - name: Upload artifact
