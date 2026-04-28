@@ -36,19 +36,38 @@ jobs:
           {
               public override void _Ready()
               {
-                  GD.Print("REPRO: about to touch Viewport...");
+                  GD.Print("REPRO 1: read GetVisibleRect");
+                  try { var r = GetTree().Root.GetVisibleRect(); GD.Print("  ok: ", r); }
+                  catch (System.Exception e) { LogException("GetVisibleRect", e); }
+
+                  GD.Print("REPRO 2: read Viewport.UseXR (the missing bind)");
+                  try { var x = GetTree().Root.UseXR; GD.Print("  ok: ", x); }
+                  catch (System.Exception e) { LogException("UseXR getter", e); }
+
+                  GD.Print("REPRO 3: write Viewport.UseXR = false (set_use_xr direct)");
+                  try { GetTree().Root.UseXR = false; GD.Print("  ok"); }
+                  catch (System.Exception e) { LogException("UseXR setter", e); }
+
+                  GD.Print("REPRO 4: explicit RuntimeHelpers.RunClassConstructor on Viewport");
                   try
                   {
-                      var rect = GetTree().Root.GetVisibleRect();
-                      GD.Print("REPRO viewport rect: ", rect);
+                      System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(
+                          typeof(Godot.Viewport).TypeHandle);
+                      GD.Print("  ok");
                   }
-                  catch (System.Exception e)
+                  catch (System.Exception e) { LogException("RunClassConstructor", e); }
+
+                  GD.Print("REPRO done");
+              }
+
+              private static void LogException(string label, System.Exception e)
+              {
+                  GD.PushError($"REPRO[{label}] outer: {e.GetType().FullName}: {e.Message}");
+                  GD.Print($"REPRO[{label}] outer: {e.GetType().FullName}: {e.Message}");
+                  for (var inner = e.InnerException; inner != null; inner = inner.InnerException)
                   {
-                      GD.PushError("REPRO caught outer: " + e.GetType().FullName + ": " + e.Message);
-                      if (e.InnerException != null)
-                      {
-                          GD.PushError("REPRO caught inner: " + e.InnerException.GetType().FullName + ": " + e.InnerException.Message);
-                      }
+                      GD.PushError($"REPRO[{label}] inner: {inner.GetType().FullName}: {inner.Message}");
+                      GD.Print($"REPRO[{label}] inner: {inner.GetType().FullName}: {inner.Message}");
                   }
               }
           }
