@@ -58,16 +58,24 @@ RUN ./modules/mono/build_scripts/build_assemblies.py \
         --godot-output-dir ./bin \
         --push-nupkgs-local /src/.nuget_local/
 
-# 4a. Web template — multithreaded (requires COOP/COEP headers when serving)
+# 4a. Web template — multithreaded (requires COOP/COEP headers when serving).
+# xr_enabled=yes forces the XR-related bindings (e.g. Viewport::set_use_xr)
+# to be registered in the binary. Without it, the editor-generated GodotSharp
+# glue references Viewport.UseXR but the runtime classdb has no entry for
+# set_use_xr, which makes Viewport's static cctor blow up at first touch
+# from any C# code (TypeInitializationException -> NativeMethodBindNotFound).
 RUN bash -lc "source /opt/emsdk/emsdk_env.sh && \
     scons target=template_release platform=web library_type=static_library \
           module_mono_enabled=yes lto=none disable_crash_handler=yes \
+          xr_enabled=yes \
           proxy_to_pthread=yes -j$(nproc)"
 
-# 4b. Web template — single-threaded (no special headers needed)
+# 4b. Web template — single-threaded (no special headers needed).
+# Same xr_enabled=yes rationale as the multithreaded build above.
 RUN bash -lc "source /opt/emsdk/emsdk_env.sh && \
     scons target=template_release platform=web library_type=static_library \
           module_mono_enabled=yes lto=none disable_crash_handler=yes \
+          xr_enabled=yes \
           threads=no -j$(nproc)"
 
 # Compute Godot version string used in the templates dir path
