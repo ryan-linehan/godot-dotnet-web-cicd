@@ -68,8 +68,12 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Temporarily disabled: cache key doesn't change when the godot
+          # branch tip moves, so re-dispatches were silently reusing a stale
+          # clone and skipping new upstream fixes. Re-enable once the clone
+          # step is keyed on the resolved SHA.
+          # cache-from: type=gha
+          # cache-to: type=gha,mode=max
           build-args: |
             GODOT_REPO=${{ github.event.inputs.godot_repo || 'https://github.com/NoctemCat/godot.git' }}
             GODOT_REF=${{ github.event.inputs.godot_ref || 'libgodot_mono_web' }}
