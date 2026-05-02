@@ -1,0 +1,74 @@
+name: Build Windows editor
+
+on:
+  workflow_dispatch:
+    inputs:
+      godot_ref:
+        description: 'Branch, tag, or commit of the Godot fork to build'
+        required: false
+        default: 'libgodot_mono_web'
+      godot_repo:
+        description: 'Godot fork repository URL'
+        required: false
+        default: 'https://github.com/NoctemCat/godot.git'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 180
+
+    steps:
+      - name: Enable long paths
+        shell: pwsh
+        run: git config --system core.longpaths true
+
+      - name: Clone Godot fork
+        shell: pwsh
+        run: |
+          $repo = "${{ github.event.inputs.godot_repo }}"
+          if (-not $repo) { $repo = "https://github.com/NoctemCat/godot.git" }
+          $ref = "${{ github.event.inputs.godot_ref }}"
+          if (-not $ref) { $ref = "libgodot_mono_web" }
+          git clone --recursive --depth=1 --branch $ref $repo godot
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install scons
+        shell: pwsh
+        run: pip install scons==4.7.0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build editor
+        shell: pwsh
+        working-directory: godot
+        run: scons platform=windows target=editor production=yes module_mono_enabled=yes -j4
+
+      - name: Generate mono glue
+        shell: pwsh
+        working-directory: godot
+        run: .\bin\godot.windows.editor.x86_64.mono.exe --headless --generate-mono-glue .\modules\mono\glue
+
+      - name: Build C# assemblies
+        shell: pwsh
+        working-directory: godot
+        run: python .\modules\mono\build_scripts\build_assemblies.py --godot-output-dir .\bin --push-nupkgs-local ${{ github.workspace }}\nuget_local
+
+      - name: Stage artifact
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path artifact\editor | Out-Null
+          New-Item -ItemType Directory -Force -Path artifact\nuget  | Out-Null
+          Copy-Item godot\bin\godot.windows.editor.x86_64.mono.exe artifact\editor\
+          Copy-Item -Recurse godot\bin\GodotSharp artifact\editor\
+          Copy-Item -Recurse nuget_local\* artifact\nuget\
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: godot-windows-editor
+          path: artifact
+          if-no-files-found: error
