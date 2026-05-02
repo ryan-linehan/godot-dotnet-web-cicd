@@ -46,7 +46,7 @@ jobs:
       - name: Build editor
         shell: pwsh
         working-directory: godot
-        run: scons platform=windows target=editor production=yes module_mono_enabled=yes -j4
+        run: scons platform=windows target=editor production=yes module_mono_enabled=yes accesskit=no d3d12=no -j4
 
       - name: Generate mono glue
         shell: pwsh
