@@ -26,9 +26,9 @@ jobs:
           submodules: false
           path: demo
 
-      - name: Override main scene to Scene2d (tests Node-array exports)
+      - name: Override main scene to Main.tscn (hosts Scene2d via SubViewport)
         run: |
-          sed -i 's|^run/main_scene=.*|run/main_scene="res://Scene2d.tscn"|' demo/csharp_project/project.godot
+          sed -i 's|^run/main_scene=.*|run/main_scene="res://Main.tscn"|' demo/csharp_project/project.godot
           echo "==> main_scene after override:"
           grep '^run/main_scene' demo/csharp_project/project.godot
 
