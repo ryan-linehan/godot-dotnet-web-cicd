@@ -8,22 +8,24 @@ mkdir -p "${TEMPLATES_DIR}"
 
 # Map our compiled templates to the standard names Godot looks for in
 # ~/.local/share/godot/export_templates/<version>/. Scons emits:
-#   godot.web.template_release.wasm32.mono.zip            (multithreaded)
-#   godot.web.template_release.wasm32.nothreads.mono.zip  (single-threaded)
-# Godot's export validator checks both *_release.zip AND *_debug.zip exist
-# even when --export-release is invoked. We only build release templates,
-# so the release zip is also dropped into the debug slot — the actual
-# export command still reads the release zip when --export-release runs.
+#   godot.web.template_release.wasm32.mono.zip            (multithreaded release)
+#   godot.web.template_release.wasm32.nothreads.mono.zip  (single-threaded release)
+#   godot.web.template_debug.wasm32.mono.zip              (multithreaded debug)
+#   godot.web.template_debug.wasm32.nothreads.mono.zip    (single-threaded debug)
 # -n leaves any user-supplied template untouched.
 shopt -s nullglob
 for src in /opt/godot-templates/*.zip; do
     case "$(basename "$src")" in
         *template_release*nothreads*)
             cp -n "$src" "${TEMPLATES_DIR}/web_nothreads_release.zip"
-            cp -n "$src" "${TEMPLATES_DIR}/web_nothreads_debug.zip"
             ;;
         *template_release*)
             cp -n "$src" "${TEMPLATES_DIR}/web_release.zip"
+            ;;
+        *template_debug*nothreads*)
+            cp -n "$src" "${TEMPLATES_DIR}/web_nothreads_debug.zip"
+            ;;
+        *template_debug*)
             cp -n "$src" "${TEMPLATES_DIR}/web_debug.zip"
             ;;
     esac
@@ -73,8 +75,8 @@ mkdir -p "${BUILD_LOGS_DIR}"
 LOG_BASELINE="$(mktemp)"
 touch -d "1 second ago" "${LOG_BASELINE}"
 
-echo "==> Exporting preset='${PRESET}' to '${OUTPUT}' (templates: ${GODOT_VERSION})"
-if godot --headless --verbose --export-release "${PRESET}" "${OUTPUT}"; then
+echo "==> Exporting (debug) preset='${PRESET}' to '${OUTPUT}' (templates: ${GODOT_VERSION})"
+if godot --headless --verbose --export-debug "${PRESET}" "${OUTPUT}"; then
     # Container runs as root; output ends up root-owned with directories
     # like _framework/ created by dotnet publish at mode 700. The host
     # runner user (UID 1001) needs read access so actions/upload-artifact

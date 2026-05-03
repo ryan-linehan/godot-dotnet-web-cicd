@@ -70,6 +70,18 @@ RUN bash -lc "source /opt/emsdk/emsdk_env.sh && \
           module_mono_enabled=yes lto=none disable_crash_handler=yes \
           threads=no -j$(nproc)"
 
+# 4c. Web template — multithreaded DEBUG (verbose Mono error traces in browser)
+RUN bash -lc "source /opt/emsdk/emsdk_env.sh && \
+    scons target=template_debug platform=web library_type=static_library \
+          module_mono_enabled=yes lto=none disable_crash_handler=yes \
+          proxy_to_pthread=yes -j$(nproc)"
+
+# 4d. Web template — single-threaded DEBUG
+RUN bash -lc "source /opt/emsdk/emsdk_env.sh && \
+    scons target=template_debug platform=web library_type=static_library \
+          module_mono_enabled=yes lto=none disable_crash_handler=yes \
+          threads=no -j$(nproc)"
+
 # Compute Godot version string used in the templates dir path
 RUN python3 -c "import version; \
 print(f\"{version.major}.{version.minor}.{getattr(version, 'patch', 0)}.{version.status}.mono\" \
@@ -82,7 +94,7 @@ RUN mkdir -p /out/bin /out/templates /out/nuget \
     && find ./bin -maxdepth 1 -type f -name 'godot.linuxbsd.editor.*mono*' \
         ! -name '*.zip' -exec cp {} /out/bin/godot \; \
     && cp -r ./bin/GodotSharp /out/bin/GodotSharp \
-    && find ./bin -maxdepth 1 -name '*template_release*mono*.zip' -exec cp {} /out/templates/ \; \
+    && find ./bin -maxdepth 1 \( -name '*template_release*mono*.zip' -o -name '*template_debug*mono*.zip' \) -exec cp {} /out/templates/ \; \
     && cp -r /src/.nuget_local/. /out/nuget/ \
     && ls -la /out/bin /out/templates /out/nuget
 
